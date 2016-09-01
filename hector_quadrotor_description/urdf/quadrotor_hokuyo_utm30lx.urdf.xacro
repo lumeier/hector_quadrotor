@@ -18,8 +18,14 @@
     
     <!-- Forward facing camera -->
     <xacro:include filename="$(find hector_quadrotor_gazebo)/urdf/camTobi.xacro" />
-    <xacro:generic_camera name="front_cam" parent="base_link" ros_topic="camera/image" cam_info_topic="camera/camera_info" update_rate="10" res_x="320" res_y="240" image_format="R8G8B8" hfov="90">
-      <origin xyz="0.15 0.0 -0.17" rpy="0 0 0"/>
+    <xacro:include filename="$(find hector_quadrotor_gazebo)/urdf/gimbal.xacro" />
+
+    <xacro:gimbal_macro name="front" parent="base_link">
+      <origin xyz="0.15 0.0 -0.03" rpy="0 0 0"/>
+    </xacro:gimbal_macro>
+
+    <xacro:generic_camera name="front_cam" parent="front_gimbal_tilt_link" ros_topic="camera/image" cam_info_topic="camera/camera_info" update_rate="10" res_x="320" res_y="240" image_format="R8G8B8" hfov="90">
+      <origin xyz="0.0 0.0 0.0" rpy="0 0 0"/>
     </xacro:generic_camera>
     
 </robot>
