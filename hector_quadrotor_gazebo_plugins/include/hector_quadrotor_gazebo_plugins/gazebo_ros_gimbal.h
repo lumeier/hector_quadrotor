@@ -26,22 +26,24 @@ protected:
 private:
     
     ros::NodeHandle* _nh;
-    ros::Subscriber _cmd_sub;
+    ros::Subscriber _pan_sub;
+    ros::Subscriber _tilt_sub;
 
     /// \brief Pointer to the model.
     physics::ModelPtr _model;
 
     /// \brief Pointer to the joint.
-    physics::JointPtr _joint;
+    physics::JointPtr _pan_joint;
+    physics::JointPtr _tilt_joint;
 
     /// \brief A PID controller for the joint.
-    common::PID _pid;
-
-    double _velocity;
+    common::PID _pan_pid;
+    common::PID _tilt_pid;
 
     std::string _namespace;
 
-    void cmd_callback(const std_msgs::Float64::ConstPtr& msg);
+    void pan_callback(const std_msgs::Float64::ConstPtr& msg);
+    void tilt_callback(const std_msgs::Float64::ConstPtr& msg);
 };
 
 } // namespace gazebo

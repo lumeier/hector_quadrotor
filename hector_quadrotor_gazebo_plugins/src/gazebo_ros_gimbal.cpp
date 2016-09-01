@@ -4,7 +4,6 @@
 namespace gazebo {
   
 GazeboRosGimbal::GazeboRosGimbal()
-  : _velocity(0.0)
 {
 }
 
@@ -32,29 +31,55 @@ void GazeboRosGimbal::Load(physics::ModelPtr model, sdf::ElementPtr sdf)
 
   // Get the first joint. We are making an assumption about the model
   // having one joint that is the rotational joint.
-  _joint = _model->GetJoints()[0];
+  for (unsigned int i = 0; i < _model->GetJointCount(); ++i)
+  {
+    physics::JointPtr current = _model->GetJoints()[i];
+    std::cout << current->GetScopedName() << std::endl;
+    if (current->GetScopedName().find("pan") != std::string::npos)
+    {
+      std::cout << "pan" << std::endl;
+      _pan_joint = current;
+    }
+    else if (current->GetScopedName().find("tilt") != std::string::npos)
+    {
+      std::cout << "tilt" << std::endl;
+      _tilt_joint = current;
+    }
+  }
 
   // Setup a P-controller, with a gain of 0.5.
-  _pid = common::PID(0.01, 0, 0);
+  _pan_pid = common::PID(0.01, 0, 0);
+  _tilt_pid = common::PID(0.01, 0, 0);
 
   // Apply the P-controller to the joint.
   _model->GetJointController()->SetPositionPID(
-      _joint->GetScopedName(), _pid);
+      _pan_joint->GetScopedName(), _pan_pid);
+  _model->GetJointController()->SetPositionPID(
+      _tilt_joint->GetScopedName(), _tilt_pid);
 
   // Set the joint's target velocity. This target velocity is just
   // for demonstration purposes.
   _model->GetJointController()->SetPositionTarget(
-      _joint->GetScopedName(), 0.0);
+      _pan_joint->GetScopedName(), 0.0);
+  _model->GetJointController()->SetPositionTarget(
+      _tilt_joint->GetScopedName(), 0.0);
 
   // ROS
   _nh = new ros::NodeHandle(_namespace);
-  _cmd_sub = _nh->subscribe("/gimbal_command", 1, &GazeboRosGimbal::cmd_callback, this);
+  _pan_sub = _nh->subscribe("/pan_command", 1, &GazeboRosGimbal::pan_callback, this);
+  _tilt_sub = _nh->subscribe("/tilt_command", 1, &GazeboRosGimbal::tilt_callback, this);
 }
 
-void GazeboRosGimbal::cmd_callback(const std_msgs::Float64::ConstPtr& msg)
+void GazeboRosGimbal::pan_callback(const std_msgs::Float64::ConstPtr& msg)
 {
   _model->GetJointController()->SetPositionTarget(
-      _joint->GetScopedName(), msg->data);
+      _pan_joint->GetScopedName(), msg->data);
+}
+
+void GazeboRosGimbal::tilt_callback(const std_msgs::Float64::ConstPtr& msg)
+{
+  _model->GetJointController()->SetPositionTarget(
+      _tilt_joint->GetScopedName(), msg->data);
 }
 
 void GazeboRosGimbal::Reset()
