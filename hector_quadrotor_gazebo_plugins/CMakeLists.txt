@@ -59,6 +59,9 @@ add_library(hector_gazebo_ros_baro src/gazebo_ros_baro.cpp)
 target_link_libraries(hector_gazebo_ros_baro ${GAZEBO_LIBRARIES} ${catkin_LIBRARIES})
 add_dependencies(hector_gazebo_ros_baro hector_uav_msgs_generate_messages_cpp)
 
+add_library(hector_gazebo_ros_gimbal src/gazebo_ros_gimbal.cpp)
+target_link_libraries(hector_gazebo_ros_gimbal ${GAZEBO_LIBRARIES} ${catkin_LIBRARIES})
+
 add_library(hector_gazebo_quadrotor_simple_controller src/gazebo_quadrotor_simple_controller.cpp)
 target_link_libraries(hector_gazebo_quadrotor_simple_controller ${GAZEBO_LIBRARIES} ${catkin_LIBRARIES})
 
