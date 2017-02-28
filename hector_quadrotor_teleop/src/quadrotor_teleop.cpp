@@ -33,6 +33,7 @@
 #include <hector_uav_msgs/YawrateCommand.h>
 #include <hector_uav_msgs/ThrustCommand.h>
 #include <hector_uav_msgs/AttitudeCommand.h>
+#include <std_msgs/Empty.h>
 
 namespace hector_quadrotor
 {
@@ -43,11 +44,12 @@ private:
   ros::NodeHandle node_handle_;
   ros::Subscriber joy_subscriber_;
 
-  ros::Publisher velocity_publisher_, attitude_publisher_, yawrate_publisher_, thrust_publisher_;
+  ros::Publisher velocity_publisher_, attitude_publisher_, yawrate_publisher_, thrust_publisher_, takeoff_publisher_, land_publisher_;
   geometry_msgs::Twist velocity_;
   hector_uav_msgs::AttitudeCommand attitude_;
   hector_uav_msgs::ThrustCommand thrust_;
   hector_uav_msgs::YawrateCommand yawrate_;
+  std_msgs::Empty empty_msg_;
 
   struct Axis
   {
@@ -94,12 +96,14 @@ public:
 
     if (control_mode_str == "twist")
     {
-      params.param<double>("x_velocity_max", axes_.x.max, 2.0);
-      params.param<double>("y_velocity_max", axes_.y.max, 2.0);
-      params.param<double>("z_velocity_max", axes_.z.max, 2.0);
+      params.param<double>("x_velocity_max", axes_.x.max, 1.0);
+      params.param<double>("y_velocity_max", axes_.y.max, 1.0);
+      params.param<double>("z_velocity_max", axes_.z.max, 1.0);
 
       joy_subscriber_ = node_handle_.subscribe<sensor_msgs::Joy>("joy", 1, boost::bind(&Teleop::joyTwistCallback, this, _1));
       velocity_publisher_ = node_handle_.advertise<geometry_msgs::Twist>("cmd_vel", 10);
+      takeoff_publisher_ = node_handle_.advertise<std_msgs::Empty>("takeoff", 10);
+      land_publisher_ = node_handle_.advertise<std_msgs::Empty>("land", 10);
     }
     else if (control_mode_str == "attitude")
     {
@@ -125,13 +129,19 @@ public:
     velocity_.linear.y = getAxis(joy, axes_.y);
     velocity_.linear.z = getAxis(joy, axes_.z);
     velocity_.angular.z = getAxis(joy, axes_.yaw);
-    if (getButton(joy, buttons_.slow.button))
+
+    if (getButton(joy,1))
     {
-      velocity_.linear.x *= slow_factor_;
-      velocity_.linear.y *= slow_factor_;
-      velocity_.linear.z *= slow_factor_;
-      velocity_.angular.z *= slow_factor_;
+      takeoff_publisher_.publish(empty_msg_);
+      printf("Sent takeoff command!!\n");
     }
+
+    if (getButton(joy,2))
+    {
+      land_publisher_.publish(empty_msg_);
+      printf("Sent land command!!\n");
+    }
+
     velocity_publisher_.publish(velocity_);
   }
 

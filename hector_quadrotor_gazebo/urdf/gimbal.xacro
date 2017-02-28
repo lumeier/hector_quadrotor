@@ -8,26 +8,30 @@
 
   <xacro:macro name="gimbal_macro" params="parent name *origin">
 
+
     <joint name="${name}_gimbal_root_joint" type="fixed">
       <xacro:insert_block name="origin"/>
       <axis xyz="0 1 0"/>
       <parent link="${parent}"/>
       <child link="${name}_gimbal_root_link"/>
     </joint>
-    
+
     <link name="${name}_gimbal_root_link">
-      <xacro:inertial_sphere_with_pose mass="0.01" diameter="0.03">
+      <xacro:inertial_sphere_with_pose mass="0.00001" diameter="0.03">
         <origin xyz="0.0 0.0 0.0" rpy="0 0 ${M_PI}"/>
       </xacro:inertial_sphere_with_pose>
     </link>
 
+
+
     <link name="${name}_gimbal_pan_link">
-      <xacro:inertial_sphere_with_pose mass="0.01" diameter="0.01">
+      <xacro:inertial_sphere_with_pose mass="0.00001" diameter="0.01">
         <origin xyz="0 0 0" rpy="0 0 0"/>
       </xacro:inertial_sphere_with_pose>
     </link>
 
-    <joint name="${name}_gimbal_pan_joint" type="revolute">
+    <joint name="${name}_gimbal_pan_joint" type="revolute" >
+
       <pose>0 0 0 0 0 0</pose>
       <axis xyz="0 0 1" />
       <parent link="${name}_gimbal_root_link"/>
@@ -36,8 +40,26 @@
       <joint_properties damping="2.0" friction="2.0"/>
     </joint>
 
+    <joint name="${name}_gimbal_roll_joint" type="revolute" >
+
+      <pose>0 0 0 0 0 0</pose>
+      <axis xyz="1 0 0" />
+      <parent link="${name}_gimbal_pan_link"/>
+      <child link="${name}_gimbal_roll_link"/>
+      <limit effort="1" velocity="0.5" lower="-${M_PI}" upper="${M_PI}"/>
+      <joint_properties damping="2.0" friction="2.0"/>
+    </joint>
+
+    <link name="${name}_gimbal_roll_link">
+      <xacro:inertial_sphere_with_pose mass="0.00001" diameter="0.01">
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+      </xacro:inertial_sphere_with_pose>
+    </link>
+
+
+
     <link name="${name}_gimbal_tilt_link">
-      <xacro:inertial_sphere_with_pose mass="0.01" diameter="0.01">
+      <xacro:inertial_sphere_with_pose mass="0.00001" diameter="0.01">
         <origin xyz="0 0 0" rpy="0 0 0"/>
       </xacro:inertial_sphere_with_pose>
     </link>
@@ -45,7 +67,7 @@
     <joint name="${name}_gimbal_tilt_joint" type="revolute">
       <pose>0 0 0 0 0 0</pose>
       <axis xyz="0 1 0" />
-      <parent link="${name}_gimbal_pan_link"/>
+      <parent link="${name}_gimbal_roll_link"/>
       <child link="${name}_gimbal_tilt_link"/>
       <limit effort="1" velocity="0.5" lower="-${M_PI}" upper="${M_PI}"/>
       <joint_properties damping="2.0" friction="2.0"/>

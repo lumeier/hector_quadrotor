@@ -126,6 +126,7 @@ double PID::update(double error, double dx, const ros::Duration& dt)
 
   // calculate output...
   double output = parameters_.k_p * state_.p + parameters_.k_i * state_.i + parameters_.k_d * state_.d;
+
   int antiwindup = 0;
   if (parameters_.limit_output > 0.0)
   {
@@ -149,4 +150,3 @@ double PID::getFilteredControlError(double& filtered_error, double time_constant
 }
 
 } // namespace hector_quadrotor_controller
-

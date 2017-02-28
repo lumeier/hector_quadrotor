@@ -4,11 +4,17 @@ project(hector_quadrotor_controller)
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
-find_package(catkin REQUIRED COMPONENTS roscpp geometry_msgs sensor_msgs nav_msgs hector_uav_msgs std_srvs hardware_interface controller_interface)
+find_package(catkin REQUIRED COMPONENTS roscpp geometry_msgs sensor_msgs nav_msgs hector_uav_msgs std_srvs hardware_interface controller_interface gazebo_ros gazebo_plugins)
 include_directories(include ${catkin_INCLUDE_DIRS})
 
 ## System dependencies are found with CMake's conventions
 find_package(Boost REQUIRED COMPONENTS system)
+
+# Depend on system install of Gazebo
+find_package(gazebo REQUIRED)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${GAZEBO_CXX_FLAGS}")
+link_directories(${GAZEBO_LIBRARY_DIRS})
+include_directories(${GAZEBO_INCLUDE_DIRS})
 
 ## Uncomment this if the package has a setup.py. This macro ensures
 ## modules and global scripts declared therein get installed
@@ -17,7 +23,7 @@ find_package(Boost REQUIRED COMPONENTS system)
 
 
 ###################################
-## catkin specific configuration ##
+## catkin specific configuration ## gazebo gazebo_ros gazebo_plugins
 ###################################
 ## The catkin_package macro generates cmake config files for your package
 ## Declare things to be passed to dependent projects
@@ -28,8 +34,8 @@ find_package(Boost REQUIRED COMPONENTS system)
 catkin_package(
     INCLUDE_DIRS include
     LIBRARIES hector_quadrotor_controller
-    CATKIN_DEPENDS roscpp geometry_msgs sensor_msgs nav_msgs hector_uav_msgs std_srvs hardware_interface controller_interface
-    DEPENDS
+    CATKIN_DEPENDS roscpp geometry_msgs sensor_msgs nav_msgs hector_uav_msgs std_srvs hardware_interface controller_interface gazebo_plugins
+    DEPENDS gazebo
 )
 
 ###########
@@ -75,4 +81,3 @@ install(FILES
   plugin.xml
   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
 )
-

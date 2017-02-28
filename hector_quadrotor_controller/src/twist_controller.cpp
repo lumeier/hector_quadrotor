@@ -25,6 +25,10 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //=================================================================================================
+#include <gazebo/gazebo.hh>
+#include <gazebo/physics/physics.hh>
+#include <gazebo/transport/transport.hh>
+#include <gazebo/msgs/msgs.hh>
 
 #include <hector_quadrotor_controller/quadrotor_interface.h>
 #include <hector_quadrotor_controller/pid.h>
@@ -34,10 +38,13 @@
 #include <geometry_msgs/TwistStamped.h>
 #include <geometry_msgs/WrenchStamped.h>
 #include <std_srvs/Empty.h>
+#include <std_msgs/Empty.h>
+#include <nav_msgs/Odometry.h>
+#include <std_msgs/Int32.h>
 
 #include <ros/subscriber.h>
 #include <ros/callback_queue.h>
-
+#include <math.h>
 #include <boost/thread.hpp>
 
 #include <limits>
@@ -57,6 +64,8 @@ public:
 
   bool init(QuadrotorInterface *interface, ros::NodeHandle &root_nh, ros::NodeHandle &controller_nh)
   {
+
+    //printf("Joint count %d\n",_model->GetJointCount());
     // get interface handles
     pose_          = interface->getPose();
     twist_         = interface->getTwist();
@@ -66,8 +75,19 @@ public:
     node_handle_ = root_nh;
 
     // subscribe to commanded twist (geometry_msgs/TwistStamped) and cmd_vel (geometry_msgs/Twist)
-    twist_subscriber_ = node_handle_.subscribe<geometry_msgs::TwistStamped>("command/twist", 1, boost::bind(&TwistController::twistCommandCallback, this, _1));
-    cmd_vel_subscriber_ = node_handle_.subscribe<geometry_msgs::Twist>("cmd_vel", 1, boost::bind(&TwistController::cmd_velCommandCallback, this, _1));
+    // twist_subscriber_ = node_handle_.subscribe<geometry_msgs::TwistStamped>("command/twist", 1, boost::bind(&TwistController::twistCommandCallback, this, _1));
+    // cmd_vel_subscriber_ = node_handle_.subscribe<geometry_msgs::Twist>("cmd_vel", 1, boost::bind(&TwistController::cmd_velCommandCallback, this, _1));
+
+    //subscribe to comanded attitude
+    cmd_vel_subscriber_ = node_handle_.subscribe<geometry_msgs::Twist>("/cmd_vel", 1, boost::bind(&TwistController::cmd_velCommandCallback, this, _1));
+
+    //takeoff and land subscriber
+    takeoff_subscriber_ = node_handle_.subscribe<std_msgs::Empty>("/takeoff", 1, boost::bind(&TwistController::takeoffCommandCallback, this, _1));
+    land_subscriber_ = node_handle_.subscribe<std_msgs::Empty>("/land", 1, boost::bind(&TwistController::landCommandCallback, this, _1));
+
+    animate_pub_ = node_handle_.advertise<std_msgs::Int32>("/mot_anim_toggle",1);
+    anim_msgs_.data=0;
+
 
     // engage/shutdown service servers
     engage_service_server_ = node_handle_.advertiseService<std_srvs::Empty::Request, std_srvs::Empty::Response>("engage", boost::bind(&TwistController::engageCallback, this, _1, _2));
@@ -116,6 +136,10 @@ public:
 
     linear_z_control_error_ = 0.0;
     motors_running_ = false;
+
+    if (anim_msgs_.data==1){
+    anim_msgs_.data=0;
+    animate_pub_.publish(anim_msgs_);}
   }
 
   void twistCommandCallback(const geometry_msgs::TwistStampedConstPtr& command)
@@ -142,6 +166,27 @@ public:
     if (!isRunning()) this->startRequest(command_.header.stamp);
   }
 
+  void takeoffCommandCallback(const std_msgs::Empty::ConstPtr& command)
+  {
+    boost::mutex::scoped_lock lock(command_mutex_);
+
+    ROS_INFO_NAMED("twist_controller", "Engaging motors and taking off!");
+    if (motors_running_ == false){
+      taking_off_ = true;
+      motors_running_ = true;
+    }
+    height_pre_takeoff_= pose_->pose().position.z;
+  }
+  void landCommandCallback(const std_msgs::Empty::ConstPtr& command)
+  {
+    boost::mutex::scoped_lock lock(command_mutex_);
+
+    ROS_INFO_NAMED("twist_controller", "Landing and shutting down motors!");
+    if (motors_running_ == true){
+      landing_=true;
+    }
+    height_pre_land_ = pose_->pose().position.z;
+  }
   bool engageCallback(std_srvs::Empty::Request&, std_srvs::Empty::Response&)
   {
     boost::mutex::scoped_lock lock(command_mutex_);
@@ -183,6 +228,10 @@ public:
 
     // Get current state and command
     Twist command = command_.twist;
+    int max_angle_=20;// max tilt angle in degrees
+    command.linear.x=command.linear.x*max_angle_/180*3.14;
+    command.linear.y=command.linear.y*max_angle_/180*3.14;
+
     Twist twist = twist_->twist();
     Twist twist_body;
     twist_body.linear =  pose_->toBody(twist.linear);
@@ -196,7 +245,7 @@ public:
       transformed.linear.y  = sin(yaw) * command.linear.x  + cos(yaw) * command.linear.y;
       transformed.angular.x = cos(yaw) * command.angular.x - sin(yaw) * command.angular.y;
       transformed.angular.y = sin(yaw) * command.angular.x + cos(yaw) * command.angular.y;
-      command = transformed;
+      //command = transformed;
     }
 
     // Get gravity and load factor
@@ -209,6 +258,7 @@ public:
     if (load_factor_limit > 0.0 && !(load_factor < load_factor_limit)) load_factor = load_factor_limit;
 
     // Auto engage/shutdown
+    auto_engage_ = false; //Disable auto engaging since takeoff and landing was integrated
     if (auto_engage_) {
       if (!motors_running_ && command.linear.z > 0.1 && load_factor > 0.0) {
         motors_running_ = true;
@@ -225,21 +275,94 @@ public:
       } else {
         linear_z_control_error_ = 0.0;
       }
-
-      // flip over?
-      if (motors_running_ && load_factor < 0.0) {
-        motors_running_ = false;
-        ROS_WARN_NAMED("twist_controller", "Shutting down motors due to flip over!");
-      }
     }
+      // flip over?
+    if (motors_running_ && load_factor < 0.0) {
+      motors_running_ = false;
+      landing_ = false;
+      taking_off_ = false;
+
+      if (anim_msgs_.data==1){
+      anim_msgs_.data=0;
+      animate_pub_.publish(anim_msgs_);}
+
+      ROS_WARN_NAMED("twist_controller", "Shutting down motors due to flip over!");
+    }
+
+
+
 
     // Update output
     if (motors_running_) {
       Vector3 acceleration_command;
-      acceleration_command.x = pid_.linear.x.update(command.linear.x, twist.linear.x, acceleration_->acceleration().x, period);
-      acceleration_command.y = pid_.linear.y.update(command.linear.y, twist.linear.y, acceleration_->acceleration().y, period);
-      acceleration_command.z = pid_.linear.z.update(command.linear.z, twist.linear.z, acceleration_->acceleration().z, period) + gravity;
-      Vector3 acceleration_command_body = pose_->toBody(acceleration_command);
+
+      //Get drone quaternion an convert to euler angles.
+       double x,y,z,w;
+       Vector3 att,transformed_att;
+       x = pose_->pose().orientation.x;
+       y = pose_->pose().orientation.y;
+       z = pose_->pose().orientation.z;
+       w = pose_->pose().orientation.w;
+
+       double sqw = w*w;
+       double sqx = x*x;
+       double sqy = y*y;
+       double sqz = z*z;
+
+       att.z = atan2(2.0 * (x*y + z*w),(sqx - sqy - sqz + sqw));
+       att.x = atan2(2.0 * (y*z + x*w),(-sqx - sqy + sqz + sqw));
+       att.y = asin(-2.0 * (x*z - y*w));
+       double height = pose_->pose().position.z;
+
+       if (taking_off_ == true) {
+
+         acceleration_command.x = pid_.linear.x.update(0 , twist.linear.x, acceleration_->acceleration().x, period);
+         acceleration_command.y = pid_.linear.y.update(0 , twist.linear.y, acceleration_->acceleration().y, period);
+         acceleration_command.z = pid_.linear.z.update(0.5 , twist.linear.z, acceleration_->acceleration().z, period) + gravity;
+
+         if (anim_msgs_.data==0){
+         anim_msgs_.data=1;
+         animate_pub_.publish(anim_msgs_);}
+
+         if (height > height_pre_takeoff_ + 1 - 0.18) {
+           taking_off_ = false;
+           landing_ = false;
+           printf("Taken off!\n");
+         }
+
+       }
+       else if (landing_ == true) {
+
+         acceleration_command.x = pid_.linear.x.update(0 , twist.linear.x, acceleration_->acceleration().x, period);
+         acceleration_command.y = pid_.linear.y.update(0 , twist.linear.y, acceleration_->acceleration().y, period);
+         acceleration_command.z = pid_.linear.z.update(-1, twist.linear.z, acceleration_->acceleration().z, period) + gravity;
+
+         if (twist.linear.z > -0.1 && height < height_pre_land_-0.1) {
+            landing_ = false;
+            motors_running_ = false;
+            taking_off_ = false;
+            printf("Landed!\n");
+            if (anim_msgs_.data==1){
+            anim_msgs_.data=0;
+            animate_pub_.publish(anim_msgs_);}
+         }
+       }
+
+       else if (command.linear.x * command.linear.x < 0.01 && command.linear.y * command.linear.y < 0.01)
+       {
+         acceleration_command.x = pid_.linear.x.update(0 , twist.linear.x, acceleration_->acceleration().x, period);
+         acceleration_command.y = pid_.linear.y.update(0 , twist.linear.y, acceleration_->acceleration().y, period);
+         acceleration_command.z = pid_.linear.z.update(command.linear.z, twist.linear.z, acceleration_->acceleration().z, period) + gravity;
+       }
+       else
+       {
+         acceleration_command.x = pid_.linear.x.update(command.linear.x, twist.linear.x, acceleration_->acceleration().x, period);
+         acceleration_command.y = pid_.linear.y.update(command.linear.y, twist.linear.y, acceleration_->acceleration().y, period);
+         acceleration_command.z = pid_.linear.z.update(command.linear.z, twist.linear.z, acceleration_->acceleration().z, period) + gravity;
+       }
+
+
+       Vector3 acceleration_command_body = pose_->toBody(acceleration_command);
 
       ROS_DEBUG_STREAM_NAMED("twist_controller", "twist.linear:               [" << twist.linear.x << " " << twist.linear.y << " " << twist.linear.z << "]");
       ROS_DEBUG_STREAM_NAMED("twist_controller", "twist_body.angular:         [" << twist_body.angular.x << " " << twist_body.angular.y << " " << twist_body.angular.z << "]");
@@ -249,8 +372,17 @@ public:
       ROS_DEBUG_STREAM_NAMED("twist_controller", "acceleration_command_world: [" << acceleration_command.x << " " << acceleration_command.y << " " << acceleration_command.z << "]");
       ROS_DEBUG_STREAM_NAMED("twist_controller", "acceleration_command_body:  [" << acceleration_command_body.x << " " << acceleration_command_body.y << " " << acceleration_command_body.z << "]");
 
-      wrench_.wrench.torque.x = inertia_[0] * pid_.angular.x.update(-acceleration_command_body.y / gravity, 0.0, twist_body.angular.x, period);
-      wrench_.wrench.torque.y = inertia_[1] * pid_.angular.y.update( acceleration_command_body.x / gravity, 0.0, twist_body.angular.y, period);
+      if (command.linear.x*command.linear.x<0.01 && command.linear.y*command.linear.y<0.01 || taking_off_ == true || landing_ == true)
+         {
+           wrench_.wrench.torque.x = inertia_[0] * pid_.angular.x.update(-acceleration_command_body.y / gravity, 0.0, twist_body.angular.x, period);
+           wrench_.wrench.torque.y = inertia_[1] * pid_.angular.y.update( acceleration_command_body.x / gravity, 0.0, twist_body.angular.y, period);
+         }
+      else
+        {
+          wrench_.wrench.torque.x = inertia_[0] * pid_.angular.y.update( -command.linear.y/2-att.x, 0.0, twist_body.angular.x, period);
+          wrench_.wrench.torque.y = inertia_[1] * pid_.angular.x.update( command.linear.x/2-att.y, 0.0, twist_body.angular.y, period);
+        }
+
       wrench_.wrench.torque.z = inertia_[2] * pid_.angular.z.update( command.angular.z, twist.angular.z, 0.0, period);
       wrench_.wrench.force.x  = 0.0;
       wrench_.wrench.force.y  = 0.0;
@@ -294,13 +426,19 @@ private:
   ros::NodeHandle node_handle_;
   ros::Subscriber twist_subscriber_;
   ros::Subscriber cmd_vel_subscriber_;
+  ros::Subscriber takeoff_subscriber_;
+  ros::Subscriber land_subscriber_;
   ros::ServiceServer engage_service_server_;
   ros::ServiceServer shutdown_service_server_;
+  ros::Publisher animate_pub_;
 
   geometry_msgs::TwistStamped command_;
   geometry_msgs::WrenchStamped wrench_;
+  nav_msgs::Odometry odom_;
+  std_msgs::Int32 anim_msgs_;
   bool command_given_in_stabilized_frame_;
   std::string base_link_frame_;
+
 
   struct {
     struct {
@@ -317,6 +455,10 @@ private:
   double inertia_[3];
 
   bool motors_running_;
+  bool taking_off_;
+  bool landing_;
+  double height_pre_land_;
+  double height_pre_takeoff_;
   double linear_z_control_error_;
   boost::mutex command_mutex_;
 

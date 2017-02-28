@@ -15,5 +15,5 @@
     <arg name="debug" value="$(arg debug)"/>
   </include>
 
-  <include file="$(find hector_quadrotor_gazebo)/launch/spawn_quadrotor.launch" />
+  <include file="$(find hector_quadrotor_gazebo)/launch/spawn_quadrotor_with_asus_with_laser.launch" />
 </launch>
